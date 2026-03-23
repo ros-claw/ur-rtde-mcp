@@ -1,6 +1,6 @@
 """
 ur_rtde hardware bridge — thread-safe wrapper around RTDEControlInterface,
-RTDEReceiveInterface, RTDEIOInterface, and DashboardClient.
+RTDEReceiveInterface, RTDEIOInterface, DashboardClient, and RobotiqGripper.
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ import json
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
+
+from robotiq_gripper import RobotiqGripper
 
 # ---------------------------------------------------------------------------
 # ur_rtde import (graceful degradation when not installed)
@@ -75,7 +77,10 @@ class URRTDEState:
 
 
 class URRTDEBridge:
-    """Thread-safe wrapper around the three ur_rtde client interfaces."""
+    """Thread-safe wrapper around the three ur_rtde client interfaces and Robotiq gripper."""
+
+    # Robotiq gripper default port (via UR Cap)
+    GRIPPER_PORT = 63352
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -83,13 +88,20 @@ class URRTDEBridge:
         self._rtde_r: Optional[RTDEReceiveInterface] = None   # type: ignore[name-defined]
         self._rtde_io: Optional[RTDEIOInterface] = None       # type: ignore[name-defined]
         self._dash: Optional[DashboardClient] = None          # type: ignore[name-defined]
+        self._gripper: Optional[RobotiqGripper] = None
         self.hostname: str = ""
         self._connected: bool = False
 
     # ---- lifecycle --------------------------------------------------------
 
-    def connect(self, hostname: str, frequency: float = -1.0) -> None:
-        """Connect all three RTDE interfaces and the Dashboard client."""
+    def connect(self, hostname: str, frequency: float = -1.0, connect_gripper: bool = False) -> None:
+        """Connect all three RTDE interfaces and the Dashboard client.
+
+        Args:
+            hostname: Robot IP address.
+            frequency: RTDE frequency (-1 = robot default).
+            connect_gripper: Also connect to Robotiq gripper on port 63352.
+        """
         if not _HAS_UR_RTDE:
             raise RuntimeError("ur_rtde not installed. Run: pip install ur-rtde")
         with self._lock:
@@ -99,6 +111,12 @@ class URRTDEBridge:
             self._rtde_c = RTDEControlInterface(hostname, frequency)
             self._dash = DashboardClient(hostname)
             self._dash.connect()
+
+            # Connect to Robotiq gripper if requested
+            if connect_gripper:
+                self._gripper = RobotiqGripper()
+                self._gripper.connect(hostname, self.GRIPPER_PORT)
+
             self._connected = True
 
     def disconnect(self) -> None:
@@ -109,12 +127,14 @@ class URRTDEBridge:
                 (self._rtde_r, lambda c: c.disconnect()),
                 (self._rtde_io, lambda c: c.disconnect()),
                 (self._dash, lambda c: c.disconnect()),
+                (self._gripper, lambda c: c.disconnect()),
             ]:
                 if client:
                     try:
                         stop_fn(client)
                     except Exception:
                         pass
+            self._gripper = None
             self._connected = False
 
     def is_connected(self) -> bool:
@@ -124,6 +144,33 @@ class URRTDEBridge:
             return self._rtde_r.isConnected()
         except Exception:
             return False
+
+    # ---- gripper helpers --------------------------------------------------
+
+    def connect_gripper(self) -> None:
+        """Connect to Robotiq gripper (port 63352). Call after connect()."""
+        if not self.hostname:
+            raise RuntimeError("Robot hostname not set. Call connect() first.")
+        with self._lock:
+            if self._gripper is None:
+                self._gripper = RobotiqGripper()
+            self._gripper.connect(self.hostname, self.GRIPPER_PORT)
+
+    def disconnect_gripper(self) -> None:
+        """Disconnect gripper only."""
+        with self._lock:
+            if self._gripper:
+                try:
+                    self._gripper.disconnect()
+                except Exception:
+                    pass
+                self._gripper = None
+
+    def is_gripper_connected(self) -> bool:
+        """Returns True if gripper is connected."""
+        if self._gripper is None:
+            return False
+        return self._gripper.is_connected()
 
     # ---- safety helpers ---------------------------------------------------
 

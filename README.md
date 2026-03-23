@@ -1,6 +1,6 @@
 # rosclaw-ur-rtde-mcp
 
-ROSClaw MCP Server for Universal Robots — using **ur_rtde** (RTDE protocol, direct TCP, no ROS2 required).
+ROSClaw MCP Server for Universal Robots — using **ur_rtde** (RTDE protocol, direct TCP, no ROS2 required). **With Robotiq Gripper support** (port 63352 via UR Cap).
 
 Part of the [ROSClaw](https://github.com/ros-claw) Embodied Intelligence Operating System.
 
@@ -17,6 +17,7 @@ Part of the [ROSClaw](https://github.com/ros-claw) Embodied Intelligence Operati
 | Payload | `set_payload` |
 | I/O | `set_digital_output`, `set_speed_slider`, `set_analog_output`, `get_digital_io_state` |
 | State | `get_robot_state`, `get_tcp_pose`, `get_joint_positions`, `get_tcp_force` |
+| **Robotiq Gripper** | `connect_gripper`, `disconnect_gripper`, `gripper_activate`, `gripper_open`, `gripper_close`, `gripper_move`, `gripper_get_status` |
 
 **MCP Resources**: `robot://status`, `robot://connection`
 
@@ -24,6 +25,7 @@ Part of the [ROSClaw](https://github.com/ros-claw) Embodied Intelligence Operati
 
 Universal Robots UR3/UR5/UR10/UR16/UR20 (CB3 and e-Series)
 Protocol: RTDE over TCP port 30004
+Robotiq Gripper: TCP port 63352 (via Robotiq_grippers UR Cap)
 
 ## Quick Start
 
@@ -57,7 +59,7 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-## LLM Usage Example
+## LLM Usage Example — Robot Arm
 
 ```
 User: Connect to the robot at 192.168.1.100, move to home position, then check TCP force.
@@ -69,6 +71,32 @@ LLM calls:
 4. get_tcp_force()
 ```
 
+## LLM Usage Example — Robotiq Gripper
+
+```
+User: Connect to the robot and gripper, then pick up an object.
+
+LLM calls:
+1. connect_robot("192.168.1.100")
+2. connect_gripper()                     # Connects to same IP, port 63352
+3. gripper_activate()                    # Activates + auto-calibrates
+4. gripper_open()                        # Open before picking
+5. move_joint([...])                     # Move above object
+6. gripper_close(speed=128, force=100)   # Close with controlled force
+7. move_joint([...])                     # Move to drop position
+8. gripper_open()                        # Release object
+```
+
+### Gripper Position Values
+
+| Position | Description |
+|----------|-------------|
+| 0 | Fully open |
+| 255 | Fully closed |
+| 128 | Halfway |
+
+Use `gripper_move(position=64, speed=255, force=100)` for precise positioning.
+
 ## Safety
 
 - All motion commands validate against UR hardware limits before sending:
@@ -77,6 +105,7 @@ LLM calls:
   - Joint acceleration: max 40 rad/s²
 - `check_safe_to_move()` blocks commands during protective/emergency stop
 - Protective stop can be unlocked via `unlock_protective_stop()` (after 5 s)
+- Gripper auto-calibration opens/closes to detect limits (call after `activate()`)
 
 ## Architecture
 
@@ -87,11 +116,40 @@ LLM (Claude)
 ur_rtde_mcp_server.py   (FastMCP, stdio)
     │
 ur_rtde_bridge.py       (thread-safe wrapper, threading.Lock)
-    │
-ur_rtde Python bindings
-    │ TCP port 30004
-    ▼
-UR Robot Controller (RTDE)
+    ├───────────────────────────────────────┐
+    │                                       │
+ur_rtde Python bindings              robotiq_gripper.py
+    │ TCP port 30004                       │ TCP port 63352
+    ▼                                       ▼
+UR Robot Controller (RTDE)         Robotiq Gripper (UR Cap)
+```
+
+## File Structure
+
+```
+rosclaw-ur-rtde-mcp/
+├── src/
+│   ├── ur_rtde_mcp_server.py   # MCP server with FastMCP (569 lines)
+│   ├── ur_rtde_bridge.py       # Thread-safe bridge for RTDE/IO/Dashboard (238 lines)
+│   └── robotiq_gripper.py      # Robotiq gripper direct TCP control (297 lines)
+├── tests/
+│   ├── test_ur_rtde_bridge.py  # Bridge tests (15 passed)
+│   └── test_robotiq_gripper.py # Gripper tests (15 passed)
+├── config/
+│   └── mcp_config.json         # MCP client configuration
+├── pyproject.toml
+├── README.md
+└── LICENSE
+```
+
+## Testing
+
+```bash
+# Run all tests (30 total, no hardware required)
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_robotiq_gripper.py -v
 ```
 
 ## Related ROSClaw Servers

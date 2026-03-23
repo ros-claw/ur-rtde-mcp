@@ -431,6 +431,111 @@ def get_digital_io_state() -> str:
     })
 
 
+# --- Gripper (Robotiq) ---
+
+@mcp.tool()
+def connect_gripper() -> str:
+    """Connect to Robotiq gripper on port 63352 (via Robotiq_grippers UR Cap).
+
+    Must be called after connect_robot(). Uses the same hostname as the robot.
+    """
+    b = _get_bridge()
+    b.require_connected()
+    try:
+        b.connect_gripper()
+        return f"Gripper connected to {b.hostname}:63352."
+    except Exception as e:
+        return f"Gripper connection failed: {e}"
+
+
+@mcp.tool()
+def disconnect_gripper() -> str:
+    """Disconnect from Robotiq gripper."""
+    b = _get_bridge()
+    b.disconnect_gripper()
+    return "Gripper disconnected."
+
+
+@mcp.tool()
+def gripper_activate(auto_calibrate: bool = True) -> str:
+    """Activate the Robotiq gripper (takes ~5 seconds). Auto-calibrates open/close range.
+
+    auto_calibrate: If True (default), calibrates min/max positions by moving.
+    """
+    b = _get_bridge()
+    if not b.is_gripper_connected():
+        return "Gripper not connected. Call connect_gripper first."
+    try:
+        b._gripper.activate(auto_calibrate=auto_calibrate)
+        status = b._gripper.get_status()
+        return json.dumps({"activated": True, "status": status}, indent=2)
+    except Exception as e:
+        return f"Activation failed: {e}"
+
+
+@mcp.tool()
+def gripper_open(speed: int = 255, force: int = 255) -> str:
+    """Open the Robotiq gripper fully.
+
+    speed: 0-255 (255=fastest). force: 0-255 (255=maximum).
+    """
+    b = _get_bridge()
+    if not b.is_gripper_connected():
+        return "Gripper not connected."
+    try:
+        pos, status = b._gripper.open_gripper(speed, force)
+        return json.dumps({"action": "open", "final_position": pos, "status": status.name})
+    except Exception as e:
+        return f"Failed: {e}"
+
+
+@mcp.tool()
+def gripper_close(speed: int = 255, force: int = 255) -> str:
+    """Close the Robotiq gripper fully.
+
+    speed: 0-255 (255=fastest). force: 0-255 (255=maximum).
+    """
+    b = _get_bridge()
+    if not b.is_gripper_connected():
+        return "Gripper not connected."
+    try:
+        pos, status = b._gripper.close_gripper(speed, force)
+        return json.dumps({"action": "close", "final_position": pos, "status": status.name})
+    except Exception as e:
+        return f"Failed: {e}"
+
+
+@mcp.tool()
+def gripper_move(position: int, speed: int = 255, force: int = 255) -> str:
+    """Move gripper to specific position (0-255, 0=open, 255=closed).
+
+    position: 0-255 target position. speed: 0-255. force: 0-255.
+    """
+    b = _get_bridge()
+    if not b.is_gripper_connected():
+        return "Gripper not connected."
+    if not 0 <= position <= 255:
+        return f"Error: position must be 0-255, got {position}."
+    try:
+        pos, status = b._gripper.move_and_wait_for_pos(position, speed, force)
+        return json.dumps({"target": position, "final_position": pos, "status": status.name})
+    except Exception as e:
+        return f"Failed: {e}"
+
+
+@mcp.tool()
+def gripper_get_status() -> str:
+    """Get Robotiq gripper status: position, object detection, fault status."""
+    b = _get_bridge()
+    if not b.is_gripper_connected():
+        return "Gripper not connected."
+    try:
+        status = b._gripper.get_status()
+        return json.dumps(status, indent=2)
+    except Exception as e:
+        return f"Failed: {e}"
+
+
 # --- Resources ---
 
 @mcp.resource("robot://status")
