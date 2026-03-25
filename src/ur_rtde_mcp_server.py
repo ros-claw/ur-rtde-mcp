@@ -72,12 +72,29 @@ def get_robot_info() -> str:
     b.require_connected()
     with b._lock:
         d = b._dash
-        return json.dumps({
-            "model": d.getRobotModel(), "serial_number": d.getSerialNumber(),
-            "polyscope_version": d.polyscopeVersion(), "robot_mode": d.robotmode(),
-            "safety_status": d.safetystatus(), "program_state": d.programState(),
-            "loaded_program": d.getLoadedProgram(), "remote_control": d.isInRemoteControl(),
-        }, indent=2)
+        info = {}
+        
+        # Safe wrapper for dashboard calls that may not be supported on older PolyScope versions
+        def safe_call(func_name: str, display_name: str):
+            try:
+                func = getattr(d, func_name)
+                return func()
+            except Exception as e:
+                error_str = str(e).lower()
+                if "not supported" in error_str or "polyscope versions less than" in error_str:
+                    return f"N/A (PolyScope < 5.6.0)"
+                return f"Error: {e}"
+        
+        info["model"] = safe_call("getRobotModel", "model")
+        info["serial_number"] = safe_call("getSerialNumber", "serial")
+        info["polyscope_version"] = safe_call("polyscopeVersion", "version")
+        info["robot_mode"] = safe_call("robotmode", "mode")
+        info["safety_status"] = safe_call("safetystatus", "safety")
+        info["program_state"] = safe_call("programState", "program")
+        info["loaded_program"] = safe_call("getLoadedProgram", "loaded_program")
+        info["remote_control"] = safe_call("isInRemoteControl", "remote_control")
+        
+        return json.dumps(info, indent=2)
 
 
 @mcp.tool()

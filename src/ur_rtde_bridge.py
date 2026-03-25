@@ -217,6 +217,29 @@ class URRTDEBridge:
                 speed_scaling_combined=r.getSpeedScalingCombined(),
             )
 
+    # ---- motion commands ------------------------------------------------
+
+    def moveJ_IK(self, pose: list[float], speed: float = 1.05, acceleration: float = 1.4,
+                 asynchronous: bool = False) -> bool:
+        """
+        Position control: move to Cartesian pose using IK (moveJ_IK)
+
+        Combines get_inverse_kin() with moveJ() for fast, intuitive positioning.
+        Faster than moveL, more intuitive than pure moveJ.
+
+        Args:
+            pose: [x, y, z, rx, ry, rz] in meters + rotation vector
+            speed: joint speed (rad/s), max 3.14
+            acceleration: joint acceleration (rad/s²), max 40.0
+            asynchronous: if True, returns immediately without waiting
+        """
+        self.require_connected()
+        self.check_safe_to_move()
+
+        with self._lock:
+            ok = self._rtde_c.moveJ_IK(pose, speed, acceleration, asynchronous)
+            return ok
+
     def format_state_json(self) -> str:
         """Return get_state() as a formatted JSON string."""
         s = self.get_state()
