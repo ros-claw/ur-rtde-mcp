@@ -1,5 +1,7 @@
 # rosclaw-ur-rtde-mcp
 
+🌐 **English** | [中文](./README.zh.md)
+
 ROSClaw MCP Server for Universal Robots — using **ur_rtde** (RTDE protocol, direct TCP, no ROS2 required). **With Robotiq Gripper support** (port 63352 via UR Cap).
 
 Part of the [ROSClaw](https://github.com/ros-claw) Embodied Intelligence Operating System.
